@@ -20,7 +20,7 @@ Every row here cost at least a session. Grouped by where you meet them, not by h
 | **filtering the sector by bounds only** | a Japanese-themed set in the same sector arrives inside your studio as "Chinese ornaments with paper lamps" | filter by mesh name too |
 | **assuming z 4.75 is the floor** | it is the **ceiling**. The floor is −1.03 | measure once, write it down |
 | **carrying another room's subject offset across** | CDPR's origin is the floor slab's centre and the slab is 0.4 thick; our room's offset is +1.1 | derive the offset per room |
-| **leaving `phasePrefabs` in a copied `.questphase`** | a **loop during loading** — saves stall at 75% on reload, and nothing looks wrong until somebody reloads | strip it |
+| **leaving `phasePrefabs` in a copied `.questphase`** | a **loop during loading** — saves stall at 75% on reload, and nothing looks wrong until somebody reloads | strip it (01 §4.3.1) |
 | **attaching an unconditional phase to the root quest** | the root quest is always running, so your test scaffolding is in every save from the load screen | gate on your own fact, always |
 | **`always_loaded` for a test body** | exactly what it says: a second copy of a character in every save, forever, with no off switch | never for scaffolding |
 | **forgetting the restart** | `.archive` mounts on a **full game restart** only; redscript recompiles on a full restart only | budget for it; and make a missing archive *say so* in the log |

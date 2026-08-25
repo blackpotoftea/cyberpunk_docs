@@ -168,12 +168,17 @@ community entry a quest node activates, and the camera is a node in the same sec
 phone fact by itself does nothing — the fact drives the scene, and the *scene* carries the prefab
 refs.
 
-### 4.3 The dead ends
+### 4.3 The dead ends — from script, at runtime
 
-1. **The node types are data.** `questTogglePrefabVariant_NodeType` and `questCallContact_NodeType`
-   are in RTTI and expose only properties — every method is inherited `ISerializable`. You can
-   *construct* the exact node the game uses and fill in `#holocalls_studio`. Nothing in the base
-   script surface will run it.
+Everything in this list is about the **runtime scripting surface**: what CET Lua and redscript can
+reach while the game is running. None of it says these nodes are unusable. Authoring them into a
+resource is a different question with a different answer, and §4.3.1 is that answer.
+
+1. **You cannot run these nodes from script at runtime.** CET and redscript can *build* one in
+   memory — `questTogglePrefabVariant_NodeType` and `questCallContact_NodeType` are both in RTTI,
+   so you can construct the exact object the game uses and fill in `#holocalls_studio` — but there
+   is no API that executes it. Both expose only properties, and every method on them is inherited
+   `ISerializable`. (They are also not nodes; see §4.3.1 for what they actually are.)
 2. **`QuestsSystem` is facts-only** — `GetFact`/`SetFact`/`GetFactStr`/`SetFactStr`/listeners. No
    `StartQuest`, no phase evaluation.
 3. **The "scripted quest" API is the journal.** `CreateScriptedQuestFromTemplate` lives on
@@ -181,6 +186,45 @@ refs.
    map pins, and runs no graph.
 4. **Script cannot flip a community entry.** The live `gameCommunitySystem` exposes crowd null-areas
    and density and nothing else (MEASURED against the instance, not read off the decompile).
+
+#### 4.3.1 The door that is open: author a phase
+
+WolvenKit has a quest phase graph editor, and it knows these node types. As of 8.19 it ships
+`QuestPhaseGraphView` with ~70 node wrappers, among them `questPhoneManagerNodeDefinition`,
+`questWorldDataManagerNodeDefinition`, `questSpawnManagerNodeDefinition`,
+`questUseWorkspotNodeDefinition`, `questPauseConditionNodeDefinition` and
+`questFactsDBManagerNodeDefinition` — which is every node vanilla's holocall chain is built from.
+
+Point 1 above is narrower than it looks, and the class hierarchy is why. `questCallContact_NodeType`
+derives from `questIPhoneManagerNodeType`, and `questTogglePrefabVariant_NodeType` from
+`questIWorldDataManagerNodeType`. Neither is a node. They are **payloads carried by** a node
+definition — `questPhoneManagerNodeDefinition.type` is a `CHandle<questIPhoneManagerNodeType>` — so
+"the node types are data" is a literal description of what those two classes are, and the thing that
+executes them is the phase graph that owns them.
+
+So the shape of the authoring route is: build the graph, ship it as a `.questphase` in your archive,
+attach it with ArchiveXL's `quest: phases:` key parented to `cyberpunk2077.quest` (the bare name is
+an alias that patches every known root quest at once), and gate it on a fact of your own. Your script
+then has exactly one lever — `SetFactStr` — and the quest system does the rest. That is a real,
+working route; the implementation this guide is drawn from built it and ran it.
+
+Two things about it that are not obvious, both of which cost a session:
+
+- **Strip `phasePrefabs` from a copied phase.** Copy a vanilla `.questphase` as a starting point and
+  leave that field populated, and saves stall at 75% on reload. Nothing looks wrong until somebody
+  reloads.
+- **Never attach an ungated phase to the root quest.** `cyberpunk2077.quest` is always running, so an
+  unconditional phase puts your test scaffolding in every save from the load screen. Gate on your own
+  fact, which defaults to 0, and a fresh save contains nothing of yours.
+
+Prove the attachment before you prove the logic: ship an empty phase, in socket straight to out, and
+confirm the game still loads a save. A phase that never ran and a phase whose condition never fired
+look identical from the outside. Entry sockets must be `In1`/`Out1`, waits must be
+`questPauseConditionNodeDefinition`, and a node with an unconnected In does **not** auto-start.
+
+This guide does not take that route, because for a body **you** spawn it is not needed at all (§6).
+It is the route to CDPR's own staged body, and to anything else that wants the quest system's
+lifetime handling rather than your own.
 
 There is one exception and it is a large one: Codeware 1.20.3 exposes
 **`QuestsSystem.ExecuteNode(questNodeDefinition)`**, which runs an arbitrary quest node against the
