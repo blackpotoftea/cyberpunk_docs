@@ -269,6 +269,22 @@ What it costs, and why this guide does not build on it:
 | story bookkeeping | each trigger bumps `holo_<name>_calls_v_start_count`, which quest logic reads |
 | coverage | ~60 staged characters, and only ever *incoming* — there is no outgoing-video machinery in the game to ride |
 
+**Knowing when the ride has gone live is its own problem, and both halves are measured.**
+`holo_setup_started` flipping to 1 means *staging completed* — 0.4–2.8 s after the trigger — and not
+that the player picked up. That is the edge to open a conversation on if the NPC is the caller,
+since they are the one who speaks first.
+
+The trap is that it is a **global level, not a per-call signal**, and the previous call's teardown
+holds it at 1 for **6.4–10.6 s after the call ends**. Read the level and a quick re-ring goes "live"
+into the corpse of the call before it. So the go-live test has to be an *edge*: latch that you have
+seen a 0 before you are willing to believe a 1.
+
+```lua
+-- at trigger time
+local started = tonumber(qs:GetFactStr('holo_setup_started'))
+ride = { sawZero = (started == 0) }          -- ...then only accept a 1 once sawZero is true
+```
+
 Against all that: for the staged cast the ride is genuinely better. It is the real story-outfitted
 singleton under CDPR's own lighting, which a spawned copy is not. Keep it reachable behind a flag
 and do not make it the default.
@@ -278,6 +294,102 @@ per scene read the start/end facts (`questFactsDBCondition` names matching `holo
 and the mode — `questCallContact_NodeType.mode = Video` with a nonzero `prefabNodeRef` is a staged
 body, `Audio` rows stage nothing. Cross-check against the studio sector's 65 `#<char>_holocall_setup`
 child prefabs; a video-staged character has to appear in both.
+
+---
+
+#### 4.4.1 The rest of the holocall surface, and why none of it is the trigger
+
+Search the RTTI dump or NativeDB for "holocall" and you get several hits that look like they should
+start one. They do not, and it is worth knowing why before you spend an evening on them.
+
+| symbol | what it actually is | usable as a trigger |
+|---|---|---|
+| `gameuiHolocallStartEvent` | an engine-side `Event` whose entire script surface is `GetVideoPath() -> String` and `ShouldForceFrameRate() -> Bool`. Those two methods give it away: this is the **prerecorded video** holocall path, not the staged-actor one. Nothing in the decompiled scripts sends or handles it | **no**, though not for the reason you might assume. You *can* `new` it — it is `importonly`, which blocks extending the type and wrapping its methods, not constructing it. What you cannot do is fill it in: both members are native **getters**, there is no settable property, and the payload is unreflected (`unk40` in the SDK header). So you get an event with an empty video path, no script-side handler to receive it, and the wrong mechanism underneath |
+| `StartHolocall(avatarID, contactName)` on `hudPhoneAvatarController` and `holoAudioCallController` | UI only. The body is `ShowAvatar(false); RefreshView(avatarID, contactName, EHudAvatarMode.Holocall)` — it puts the phone's avatar widget into holocall mode. Called from `hudPhone` and `newHudPhoneGameController` while reacting to a call that is already running | **no.** It dresses the HUD. It stages no body, spawns no room and starts no call |
+| `Character_Record.HolocallInitializerPath() -> ResRef` | a `ResRef` on the TweakDB character record, next to `VoiceTag()` and `FullDisplayName()`. Looks like a per-character holocall hook. It is not — see below | **no** |
+| `gameuiHolocallCameraComponent` | §1. The RTT camera | yes, and it is the one piece of this surface that does real work for you |
+
+So the trigger really is the fact write in §4.4. There is no `StartHolocall()` that starts a holocall;
+the one function with that name paints a widget.
+
+`HolocallInitializerPath` looked like the loose thread worth pulling, so we pulled it. The schema
+declares it `ResRef holocallInitializerPath = ""` (`characters/schema.tweak`), and across the whole
+shipped TweakDB **exactly one character record sets it**:
+
+```
+q000_corpo_coach : Quest_NPC_Base
+    holocallInitializerPath = "base\quest\holocalls\coach\coach_holocall.scene"
+```
+
+The corpo prologue's boxing coach, and nobody else. It also points at a **`.scene`**, which puts it
+straight back under §4.3 — a scene is not something script runs. So it is neither a per-character
+holocall hook nor a way in; it is a one-off from the prologue with a general-sounding name.
+
+---
+
+### 4.5 Ringing the phone from script — a vanilla API that IS callable
+
+§4.3 is about quest *nodes*. The phone is a different story: `PhoneSystem` is an ordinary
+`ScriptableSystem` with a request queue, and that queue is reachable from redscript. No `.scene`, no
+baked `.phone` resource, no native.
+
+```swift
+let ps = GameInstance.GetScriptableSystemsContainer(this.GetGameInstance())
+         .Get(n"PhoneSystem") as PhoneSystem;
+
+let r = new questTriggerCallRequest();
+r.caller       = contact;        // or n"Player" when V is the one dialling
+r.addressee    = n"player";
+r.callPhase    = questPhoneCallPhase.IncomingCall;   // then StartCall, then EndCall
+r.callMode     = questPhoneCallMode.Audio;
+r.visuals      = questPhoneCallVisuals.Default;
+r.isRejectable = true;
+ps.QueueRequest(r);
+```
+
+Three phases run a call: `IncomingCall` opens it, `StartCall` connects it, `EndCall` disconnects.
+
+**Direction lives in `caller`/`addressee`.** `PhoneSystem` derives `isPlayerCalling` from
+`caller == Player`, and every later phase has to agree with the one that opened the call — a
+`StartCall` that swaps them mid-call is a different call as far as the HUD is concerned.
+
+Leave `isPlayerTriggered` false unless you set it on every phase. It drives
+`ApplyPhoneCallRestriction`, and setting it asymmetrically leaves the restriction stuck on.
+
+**The answer arrives as a fact, not as a callback on the request.** `PhoneSystem.OnPickupPhone`
+writes the fact and does nothing else, so ask `ps.GetPhoneCallFactName(contact, n"player")` for the
+name and register a `QuestsSystem` listener on it. The values are `questPhoneTalkingState` —
+`Talking` on pickup, `Rejected` on decline. Note the argument order flips with the direction:
+a dial is `GetPhoneCallFactName(n"player", contact)`.
+
+**The 8 s failsafe is the one timing rule, and it is a trap.** It is armed at the ring, and *pickup
+does not cancel it* — `OnPickupPhone` only writes the fact, leaving `callPhase == IncomingCall`, so
+`OnPhoneTimeoutRequest` hangs up an already-answered call at t+8s. Only a new call-information write
+cancels it. So queue `StartCall` the instant the fact flips to `Talking`, from the listener itself,
+rather than round-tripping through Lua and waiting on anything slow.
+
+**The two directions are not symmetric**, and it is the HUD that makes them differ:
+
+| | ring (NPC calls V) | dial (V calls NPC) |
+|---|---|---|
+| banner | yes, with a pickup to wait for | none — `OnPhoneCall` gates it on `!isPlayerCalling`, so it goes straight to "Connecting" |
+| who answers | V, and the fact tells you | **nobody.** With no scene, nothing ever queues `StartCall` and the failsafe hangs up — which is exactly what a vanilla dialler call to a non-story contact does |
+| your job | listen for `Talking` | time the pickup yourself, inside the 8 s |
+
+**An unresolvable contact id is a CTD, not a log line.**
+`NewHudPhoneGameController.SetPhoneFunction` reads `GetAvatarID`/`GetLocalizedName` off the resolved
+`JournalContact` before its switch, guarded only on the logic controller. Validate first, the same
+way `GetIncomingContact` does: `JournalManager.GetContacts` with **both** the active and inactive
+state filters, and an exact, case-sensitive `GetId()` compare.
+
+One thing to watch when you test on a named contact: the fact you are driving is the same one
+vanilla's baked call scenes listen on. Those are quest-phase gated, so at an arbitrary time nothing
+should answer — but if ringing someone summons vanilla VO, that is your finding, and the fix is to
+spike on a contact with no call content.
+
+This is the lever the studio hangs off: ring or dial through `PhoneSystem`, start the studio at the
+same moment ([05 §1](05-bringing-it-together.md)), and attach the picture when both the call and the
+feed are ready.
 
 ---
 

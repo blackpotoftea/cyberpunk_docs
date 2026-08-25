@@ -11,7 +11,7 @@ The picture and the conversation are two independent tracks that meet, and the m
 decision in the whole feature is to let them meet **in either order**.
 
 ```
-  t=0     the line opens (dial placed / ring starts / a foreign call is seen)
+  t=0     the line opens (dial placed / ring starts / a foreign call is seen)   <- 01 §4.5
           │
           ├─► startVideo(contact)          ── the studio starts NOW, not on answer
           │      spawn room ─► spawn lens ─► stream-in poll ─► Toggle(true) ─┐
@@ -181,6 +181,7 @@ When it is wrong, this is the order to ask questions in.
 | CTD on load or on quit | teardown ran against a dead world | the crash address is inside an engine system stub, no mod frames |
 | CTD a few frames after hanging up | camera freed in the same frame it was disabled | same shape — render thread, `DynamicBuffer::ResizeBuffer` |
 | every holocall in the game is dead | a leaked `holo_setup_active` from a vanilla ride | read the fact back |
+| a re-ring reads as live at once, over nothing | `holo_setup_started` is a global level, held at 1 for 6.4–10.6 s by the last call's teardown | require a 0 before believing a 1 ([01 §4.4](01-engine-primitives.md)) |
 
 ---
 
