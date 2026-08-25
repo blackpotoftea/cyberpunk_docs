@@ -171,14 +171,23 @@ refs.
 ### 4.3 The dead ends — from script, at runtime
 
 Everything in this list is about the **runtime scripting surface**: what CET Lua and redscript can
-reach while the game is running. None of it says these nodes are unusable. Authoring them into a
-resource is a different question with a different answer, and §4.3.1 is that answer.
+reach while the game is running. None of it says these nodes are unusable.
+
+The distinction to hold on to: **you define these nodes in WolvenKit and ship them in a resource.
+What you cannot do is create one at runtime from script and run it.** Authoring is a supported
+workflow and §4.3.1 walks it; dynamic construction plus execution is the part with no door.
+
+Script sits alongside the quest system rather than inside it — facts in, listeners out. The scene
+system is the same shape: `SceneSystem` gives script fast-forward and rewind, no playback and no
+actor acquisition. Quest nodes also own sockets, lifetimes and phase-scoped state, which is why one
+fired in isolation may not behave; that machinery needs a graph to live in.
 
 1. **You cannot run these nodes from script at runtime.** CET and redscript can *build* one in
    memory — `questTogglePrefabVariant_NodeType` and `questCallContact_NodeType` are both in RTTI,
-   so you can construct the exact object the game uses and fill in `#holocalls_studio` — but there
-   is no API that executes it. Both expose only properties, and every method on them is inherited
-   `ISerializable`. (They are also not nodes; see §4.3.1 for what they actually are.)
+   so you can construct the exact object the game uses and fill in `#holocalls_studio` — but
+   nothing in script executes it. What executes it is a phase graph — which you define in WolvenKit
+   and ship. Both classes expose only properties, and every method on them is inherited
+   `ISerializable`. (They are also not nodes; see §4.3.1 for what they are.)
 2. **`QuestsSystem` is facts-only** — `GetFact`/`SetFact`/`GetFactStr`/`SetFactStr`/listeners. No
    `StartQuest`, no phase evaluation.
 3. **The "scripted quest" API is the journal.** `CreateScriptedQuestFromTemplate` lives on
