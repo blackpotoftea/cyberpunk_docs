@@ -14,6 +14,7 @@ it happen in game with logs on. Where nobody ran it, it says so.
 | | |
 |---|---|
 | [holo_studio/](holo_studio/) | Building a holo studio: a render-to-texture camera filming a spawned, lit NPC off-screen into your own UI. The basis of a video holocall with an arbitrary NPC, and of in-UI portraits, NPC photos, or any other live picture of a person. Seven documents plus reference `.lua` / `.py` / `.reds`. |
+| [follower_elevator/](follower_elevator/) | A follower who rides the elevator with V instead of being left on the floor it departed from: mount them to the lift entity the way CDPR's own quest scenes do, from CET alone. One guide plus a reference `.lua`. |
 
 ## Conventions
 
