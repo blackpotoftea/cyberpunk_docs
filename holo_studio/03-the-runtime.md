@@ -243,16 +243,24 @@ Check for id 0 here too, and check it **before** you write the id into any regis
 outright otherwise leaves a zero id filed under the character's key, and every later lookup hands it
 out as though it were a body.
 
-### 4.2 The two calls that make it real at range
+### 4.2 The calls that make it real at range
 
 ```lua
 -- in the spawn callback, once you have the EntityID:
 Game.GetAnimationSystem():SetForcedVisible(id, true)     -- releases anim-graph culling
+MyPlugin.ForceHighestLod(id, true)                        -- your RED4ext native: ScheduleEntitySetLOD(0x20)
 ```
 
 `alwaysSpawned` keeps it existing and drawing; `SetForcedVisible` makes it move. Without the second
 the subject stands frozen. **Pair it with `(id, false)` at teardown** — a leaked forced-visible flag
 outlives the delete.
+
+The third holds the body at its highest LOD, which is what keeps cloth whole and a
+`compiledEntityLODFlags = 0` character from coming out as its faceless stand-in. It is the half of a
+scene's `forceMaxVisibility` that script cannot reach: [01 §6](01-engine-primitives.md) has the engine
+call and the RED4ext code. Call it **once per body** — and again from your guard tick until it reports
+held, because a body can arrive before its runtime scene exists — and clear it **once** at teardown,
+while the body still answers. A body that arrives after its shoot was stopped must not claim it.
 
 ### 4.3 Pin it against the duplicate watcher
 

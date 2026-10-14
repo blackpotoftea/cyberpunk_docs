@@ -419,9 +419,9 @@ system and it will take them back. A body you spawned with your own `DynamicEnti
 
 ---
 
-## 6. Render at range — the two calls that are the whole lever
+## 6. Render at range — the three calls that are the whole lever
 
-**MEASURED.** If you read one thing in this guide, read these two lines.
+**MEASURED.** If you read one thing in this guide, read these three.
 
 ```lua
 -- 1. it EXISTS and DRAWS at range, because we registered it ourselves
@@ -431,9 +431,60 @@ spec.alwaysSpawned = true          -- DynamicEntitySpec -> PopulationEntityRegis
 Game.GetAnimationSystem():SetForcedVisible(entityID, true)   -- pair with (id, false) at teardown
 ```
 
-With both, a body spawned at the studio rendered **and animated** in a render-to-texture feed with
-the player **8.7 km away**. Without (1) the entity is created, never becomes a body, and the only
+```cpp
+// 3. it is drawn WHOLE at range: hold the entity at its highest LOD. RED4ext only -- see below.
+ScheduleEntitySetLOD(scene, &entityHandle, 0x20);            // pair with ScheduleEntityClearLOD(.., 0x20)
+```
+
+With (1) and (2), a body spawned at the studio rendered **and animated** in a render-to-texture feed
+with the player **8.7 km away**. Without (1) the entity is created, never becomes a body, and the only
 symptom is an `onFailed` five seconds later. Without (2) it stands frozen.
+
+**Without (3), some characters come out wrong**, and which ones is decided by their assets, not by
+anything you did:
+
+| what you see in the feed | who | why |
+|---|---|---|
+| a faceless, low-poly, sometimes untextured body | entities whose `.ent` has `compiledEntityLODFlags = 0` (Mr. Hands, Dino, Rachel, 8ug8ear, …) | at range the engine serves such an entity only its stand-in (`AppearanceProxyMesh`) |
+| the outfit exploded into shards across the frame | any look with an `entSkinnedClothComponent` (River's coat, Rogue's and Hanako's jackets, …) | the cloth runs at a distance LOD and does not hold together |
+| fine | everyone else (Judy, Panam, Songbird, …) | |
+
+Vanilla's own holocall draws all of them whole, because its scene does (3) for it. The scene's
+visibility step, `scn::VisibilityProcedure::DoApply`, calls `ent::Scene::ScheduleEntitySetLOD(body, 0x20)`
+when the actor's `forceMaxVisibility` is set, and then `SetEntityForcedVisibility(true)` — which is
+only a jump into `AnimationSystem::SetForcedVisible`, i.e. call (2). `PhotoModeSystem::ForceHighestLOD`
+passes the same `0x20`. **MEASURED** (read from the game binary, then run): holding a spawned body at
+`0x20` drew every one of the characters above whole, cloth following the arms, faces on.
+
+**(3) is not reachable from script.** Nothing in redscript or Codeware wraps it, and photo mode's
+wrapper is private. A RED4ext plugin reaches it in three steps:
+
+```cpp
+// The two functions, by Adler-32 hash of the mangled name (the game ships the hash -> address table):
+//   ?ScheduleEntitySetLOD@Scene@ent@@QEAAXAEBV?$THandle@VEntity@ent@@@@W4EntityLOD@2@@Z    3483573384
+//   ?ScheduleEntityClearLOD@Scene@ent@@QEAAXAEBV?$THandle@VEntity@ent@@@@W4EntityLOD@2@@Z  237772099
+using EntityLodFn = void (*)(void* scene, const RED4ext::Handle<RED4ext::IScriptable>* entity, uint32_t lod);
+auto setLod   = reinterpret_cast<EntityLodFn>(RED4ext_ResolveAddress(3483573384u));
+auto clearLod = reinterpret_cast<EntityLodFn>(RED4ext_ResolveAddress(237772099u));
+
+// The entity's ent::Scene, by photo mode's own path -- null-check every hop:
+//   entity +0xB8 (runtime block) -> +0x8 (world::RuntimeScene) -> +0x50 (RuntimeSystemEntity) -> +0x48 (ent::Scene)
+uintptr_t p = reinterpret_cast<uintptr_t>(entity.instance);
+for (uintptr_t off : {0xB8, 0x8, 0x50, 0x48}) { if (!p) break; p = *reinterpret_cast<uintptr_t*>(p + off); }
+
+setLod(reinterpret_cast<void*>(p), &entity, 0x20);     // once per body, on the game thread
+```
+
+Hold once per body and clear once at teardown, as the scene does with its own per-actor counters;
+whether the engine stacks repeated Set calls is not measured. The four offsets are one build's: the
+hashes fail loudly when a function is gone, the offsets do not. Re-read them from
+`PhotoModeSystem::ForceHighestLOD` after a game update.
+
+Two fixes that look right and are not (MEASURED): a per-character `.ent` copy with
+`compiledEntityLODFlags` raised fixes the stand-in case only; converting the cloth component to a plain
+`entSkinnedMeshComponent` stops the shards but freezes the garment in its bind pose, because a cloth
+mesh's vertices follow the simulation, not its skin weights. Pinning the cloth component's own
+`forceLODLevel` does nothing.
 
 None of this holds for a body the game owns. With vanilla's quest chain fully staged and its
 community entry Activated, Codeware's community wrapper read
@@ -443,11 +494,11 @@ kept **no body** at range. For a game-owned body, existence at range is scene-on
 A `.scene` is the only route to CDPR's own story-outfitted singleton, and nothing in this guide
 takes it. If you do: set `forceMaxVisibility` on the params struct your actor's `acquisitionPlan`
 names — each of the eight structs carries its own copy of the field and seven are inert — because
-CDPR set it on every staged body in that room but one. No script can set it, so it is a scene-
-authoring decision or nothing.
+CDPR set it on every staged body in that room but one. It is calls (2) and (3) above, done by the
+scene.
 
 A body you spawn yourself therefore needs no scene, no community entry and no quest hold, which is
-why this guide is script plus assets rather than a `.questphase`.
+why this guide is script plus assets rather than a `.questphase` — plus a RED4ext plugin for (3).
 
 Two more that have the same shape:
 

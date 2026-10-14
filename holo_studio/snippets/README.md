@@ -17,6 +17,10 @@ text has never been compiled in this form. Port them, do not paste them.
   pivot maths and the verify assertions, which is the part that is hard to rediscover.
 - **A facial/eye driver.** That needs a RED4ext native; [03 §6.2](../03-the-runtime.md) describes the
   geometry it has to be given and the head-basis calibration it cannot skip.
+- **The highest-LOD hold.** Native too: `holostudio.lua` spawns and animates the subject, but a cloth
+  wearer or a `compiledEntityLODFlags = 0` character still comes out broken at range until a RED4ext
+  plugin holds the body at `ScheduleEntitySetLOD(0x20)`. [01 §6](../01-engine-primitives.md) has the
+  hashes, the pointer path and the call.
 - **A `.dtex` readback.** Also native, and needed for nothing but stored stills
   ([04 §7](../04-showing-the-feed.md)).
 

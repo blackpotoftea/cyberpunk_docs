@@ -7,7 +7,9 @@ NPC is actually made of, and the same rig does in-UI portraits, NPC photos, secu
 that has to be a live picture of a person.
 
 What follows is the engine primitives, the assets you have to bake yourself, and the code that
-drives them. Nothing in it depends on another mod or a framework. Numbers and flags marked
+drives them. It is CET script plus baked assets, with one exception: holding the body at its highest
+LOD needs a RED4ext plugin — without it, characters with cloth or a LOD-0 entity come out broken at
+range ([01 §6](01-engine-primitives.md)). Numbers and flags marked
 **MEASURED** were established in game; the rest is marked design or untested.
 
 Four parts, and each can be built and proven on its own:
@@ -28,7 +30,8 @@ Four parts, and each can be built and proven on its own:
   (autoHideDistance ≫ 5)                                SUBJECT
                                                             ▲
                                NPC spawn ── alwaysSpawned ──┤ exists + draws at range
-                                         ── SetForcedVisible┘ animates at range
+                                         ── SetForcedVisible┤ animates at range
+                                         ── highest LOD ────┘ drawn whole: cloth, faces (RED4ext)
 ```
 
 ## What it buys, and what it does not
@@ -39,7 +42,8 @@ Four parts, and each can be built and proven on its own:
 | ✅ **any** spawnable NPC record, on incoming and outgoing calls alike, writing nothing the game's own quest logic reads | |
 | ✅ a lit body that renders and animates with the player kilometres away | |
 | ❌ a picture of somewhere the player is not. The camera renders what is streamed around the player, so a studio in NE2 with the player in Watson renders an empty room — unless *you* own everything in shot | |
-| ❌ a **still** that survives a save. The feed is live; freezing one frame to a PNG wants a `.dtex` readback in a RED4ext DLL, the only piece of this that is not script plus assets | |
+| ❌ a **still** that survives a save. The feed is live; freezing one frame to a PNG wants a `.dtex` readback in a RED4ext DLL | |
+| ❌ **every** character drawn whole from script alone. Cloth and `compiledEntityLODFlags = 0` entities need the highest-LOD hold, which only a RED4ext DLL can call | |
 | ❌ more than one live feed per render target. One `.dtex` = one camera drawing at a time | |
 
 ## Prerequisites
@@ -51,6 +55,7 @@ Four parts, and each can be built and proven on its own:
 | **Codeware** | `DynamicEntitySystem` / `DynamicEntitySpec`, which is how everything here gets into the world |
 | **redscript** | the widget that shows the feed. Lua cannot create an `inkImage` |
 | **ArchiveXL** | only if you ship a streaming sector for the lights (`.archive.xl`) |
+| **RED4ext** (a plugin of your own) | the highest-LOD hold: `ent::Scene::ScheduleEntitySetLOD`, resolved by hash. Without it, cloth explodes and LOD-0 characters are faceless at range |
 | **WolvenKit CLI** | `extract` / `convert serialize` / `convert deserialize` / `pack` — the whole bake pipeline |
 
 ## Build order
@@ -69,8 +74,9 @@ step 6 look identical from the couch: a black rectangle.
    atlas. Sharper picture = your archive mounted. → [02](02-bake-the-assets.md) §2
 4. **The subject.** Spawn an NPC in front of the lens *next to the player*. Confirm it renders.
    → [03](03-the-runtime.md) §4
-5. **Range.** Walk away. Add `alwaysSpawned` (it stays) and `SetForcedVisible` (it moves).
-   → [03](03-the-runtime.md) §4.2
+5. **Range.** Walk away. Add `alwaysSpawned` (it stays) and `SetForcedVisible` (it moves). Then
+   film someone in a cloth coat (River) and a LOD-0 entity (Mr. Hands): hold the highest LOD and
+   both draw whole. → [03](03-the-runtime.md) §4.2, [01](01-engine-primitives.md) §6
 6. **The room.** Bake it, spawn it, stand the subject in it. It will be **black** — that is correct,
    and it is the proof the room arrived. → [02](02-bake-the-assets.md) §3
 7. **The lights.** Always-loaded sector with `autoHideDistance` raised. Now it is lit at range.

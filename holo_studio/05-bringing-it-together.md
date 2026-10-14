@@ -150,11 +150,12 @@ Each line is independently provable. Do not proceed on inference.
 | 5 | walk away | they vanish |
 | 6 | add `alwaysSpawned` | they stay, frozen |
 | 7 | add `SetForcedVisible(id, true)` | they move |
-| 8 | bake and spawn the room | the feed goes **black** (this is success) |
-| 9 | bake the light sector, restart | the feed is lit at range |
-| 10 | solve the lens from a SHOTS row | the log's rig line matches the picture; FLAT and FACE differ as expected |
-| 11 | pose + look-at | they hold a pose and face the lens |
-| 12 | teardown from every exit; then save/load; then crash-and-restart | nothing is left standing, and `Settled`/`InUse` read free |
+| 8 | hold the highest LOD (RED4ext, [01 §6](01-engine-primitives.md)); test with a cloth wearer (River, Rogue) and a `compiledEntityLODFlags = 0` one (Mr. Hands, Dino) | the coat is whole and follows the arms; the face is there |
+| 9 | bake and spawn the room | the feed goes **black** (this is success) |
+| 10 | bake the light sector, restart | the feed is lit at range |
+| 11 | solve the lens from a SHOTS row | the log's rig line matches the picture; FLAT and FACE differ as expected |
+| 12 | pose + look-at | they hold a pose and face the lens |
+| 13 | teardown from every exit; then save/load; then crash-and-restart | nothing is left standing, and `Settled`/`InUse` read free |
 
 ---
 
@@ -172,6 +173,8 @@ When it is wrong, this is the order to ask questions in.
 | picture is soft | you are showing vanilla's 256² atlas | the component's `resolutionWidth` read-back |
 | subject not there at all | id 0 at spawn, or no `alwaysSpawned` | the `CreateEntity -> id=` log line |
 | subject frozen | no `SetForcedVisible` | it is one call; add it |
+| subject faceless, low-poly, maybe untextured | no highest-LOD hold, on a `compiledEntityLODFlags = 0` entity | serialize the `.ent`: the flag is 0. Judy at 3 is fine in the same shot |
+| outfit exploded into shards | no highest-LOD hold, on a look with an `entSkinnedClothComponent` | the shards are the cloth piece's colour; the rest of the body is fine |
 | subject there but dark below the chest | you cloned a bust rig | the light bake's aim heights: three at 1.4–1.8, nothing low |
 | lens at the stock wide fov | `fov` written before `Toggle(true)` | read the component back after enabling |
 | "she isn't looking at camera" | the Eyes part has no `LookAtPartRequest` | the head is right and the gaze is off by exactly the orbit angle |
